@@ -2,88 +2,33 @@ name: OpenSSH
 on:
   workflow_dispatch
 jobs:
-    build-x86:
-      name: Build OpenSSH x86
+    build-aarch64:
+      name: Build OpenSSH AARCH64
       runs-on: ubuntu-latest
-      container: muslcc/x86_64:i686-linux-musl
       outputs:
         version: ${{ steps.build_openssh.outputs.PACKAGED_VERSION }}
       steps:
         - name: Checkout
-          uses: actions/checkout@v3
-
-        - name: Install dependencies
-          run: sudo apk update && sudo apk add bash && sudo bash build/install_deps_alpine.sh
+          uses: actions/checkout@v4
 
         - name: Build OpenSSH
           id: build_openssh
-          run: $GITHUB_WORKSPACE/build/targets/build_openssh.sh x86
+          run: |
+            mkdir -p ${{ github.workspace }}/output
+            touch ${{ github.workspace }}/github_output.env
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -v ${{ github.workspace }}/output:/output \
+              -w /workspace \
+              -e GITHUB_WORKSPACE=/workspace \
+              -e GITHUB_OUTPUT=/workspace/github_output.env \
+              muslcc/x86_64:aarch64-linux-musl \
+              sh -c "apk update && apk add bash && bash build/install_deps_alpine.sh && bash build/targets/build_openssh.sh aarch64"
+            sed -i "s|/output/|${{ github.workspace }}/output/|g" ${{ github.workspace }}/github_output.env
+            cat ${{ github.workspace }}/github_output.env >> $GITHUB_OUTPUT
 
         - name: Upload artifacts
-          uses: actions/upload-artifact@v3
-          with:
-              name: ${{ steps.build_openssh.outputs.PACKAGED_NAME }}
-              path: ${{ steps.build_openssh.outputs.PACKAGED_NAME_PATH }}
-
-    build-x86_64:
-      name: Build OpenSSH x86_64
-      runs-on: ubuntu-latest
-      container: muslcc/x86_64:x86_64-linux-musl
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v3
-
-        - name: Install dependencies
-          run: sudo apk update && sudo apk add bash && sudo bash build/install_deps_alpine.sh
-
-        - name: Build OpenSSH
-          id: build_openssh
-          run: $GITHUB_WORKSPACE/build/targets/build_openssh.sh x86_64
-
-        - name: Upload artifacts
-          uses: actions/upload-artifact@v3
-          with:
-              name: ${{ steps.build_openssh.outputs.PACKAGED_NAME }}
-              path: ${{ steps.build_openssh.outputs.PACKAGED_NAME_PATH }}
-
-    build-armhf:
-      name: Build OpenSSH ARMHF
-      runs-on: ubuntu-latest
-      container: muslcc/x86_64:arm-linux-musleabihf
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v3
-
-        - name: Install dependencies
-          run: sudo apk update && sudo apk add bash && sudo bash build/install_deps_alpine.sh
-
-        - name: Build OpenSSH
-          id: build_openssh
-          run: $GITHUB_WORKSPACE/build/targets/build_openssh.sh armhf
-
-        - name: Upload artifacts
-          uses: actions/upload-artifact@v3
-          with:
-              name: ${{ steps.build_openssh.outputs.PACKAGED_NAME }}
-              path: ${{ steps.build_openssh.outputs.PACKAGED_NAME_PATH }}
-
-    build-aarch64:
-      name: Build OpenSSH AARCH64
-      runs-on: ubuntu-latest
-      container: muslcc/x86_64:aarch64-linux-musl
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v3
-
-        - name: Install dependencies
-          run: sudo apk update && sudo apk add bash && sudo bash build/install_deps_alpine.sh
-
-        - name: Build OpenSSH
-          id: build_openssh
-          run: $GITHUB_WORKSPACE/build/targets/build_openssh.sh aarch64
-
-        - name: Upload artifacts
-          uses: actions/upload-artifact@v3
+          uses: actions/upload-artifact@v4
           with:
               name: ${{ steps.build_openssh.outputs.PACKAGED_NAME }}
               path: ${{ steps.build_openssh.outputs.PACKAGED_NAME_PATH }}
@@ -91,16 +36,16 @@ jobs:
     create-release:
       name: Create OpenSSH Release
       runs-on: ubuntu-latest
-      needs: [build-x86, build-x86_64, build-armhf, build-aarch64]
+      needs: [build-aarch64]
       steps:
         - name: Checkout
-          uses: actions/checkout@v3
+          uses: actions/checkout@v4
 
         - name: Prepare Environment
-          run: mkdir /tmp/releases
+          run: mkdir -p /tmp/releases
 
         - name: Download Artifacts
-          uses: actions/download-artifact@v3
+          uses: actions/download-artifact@v4
           with:
             path: /tmp/releases
 
@@ -111,12 +56,11 @@ jobs:
           id: tag_release
           run: |
             set +e
-            if git rev-list "openssh-v${{ needs.build-x86.outputs.version }}".. >/dev/null;then
-              echo "Tag for openssh-v${{ needs.build-x86.outputs.version }} already exists. Skipping release creation."
+            if git rev-list "openssh-v${{ needs.build-aarch64.outputs.version }}".. >/dev/null;then
               echo "NEW_RELEASE=false" >> $GITHUB_OUTPUT
             else
-              git tag "openssh-v${{ needs.build-x86.outputs.version }}"
-              git push origin "openssh-v${{ needs.build-x86.outputs.version }}"
+              git tag "openssh-v${{ needs.build-aarch64.outputs.version }}"
+              git push origin "openssh-v${{ needs.build-aarch64.outputs.version }}"
               echo "NEW_RELEASE=true" >> $GITHUB_OUTPUT
             fi
 
@@ -124,7 +68,7 @@ jobs:
           uses: ncipollo/release-action@v1
           if: ${{ steps.tag_release.outputs.NEW_RELEASE == 'true' }}
           with:
-            name: openssh-v${{ needs.build-x86.outputs.version }}
-            tag: openssh-v${{ needs.build-x86.outputs.version }}
+            name: openssh-v${{ needs.build-aarch64.outputs.version }}
+            tag: openssh-v${{ needs.build-aarch64.outputs.version }}
             artifacts: "/tmp/releases/*/*"
             token: ${{ secrets.GITHUB_TOKEN }}
