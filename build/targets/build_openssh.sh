@@ -24,13 +24,29 @@ build_openssh() {
         CXX="g++ ${GXX_OPTS}" \
         CXXFLAGS="-I${BUILD_DIRECTORY}/openssl -I${BUILD_DIRECTORY}/binutils-gdb/zlib" \
         ./configure \
+            --prefix=/usr \
+            --sysconfdir=/etc/ssh \
+            --with-privsep-path=/var/empty \
             --with-ssl-engine \
             --with-ssl-dir="${BUILD_DIRECTORY}/openssl" \
             --with-zlib="${BUILD_DIRECTORY}/binutils-gdb/zlib" \
             --with-ldflags=-static \
-            --host="$(get_host_triple)"
+            --host="$(get_host_triple)" \
+            --with-pam=no \
+            --without-xauth \
+            --without-kerberos5 \
+            --without-zlib-version-check \
+            --disable-utmp \
+            --disable-utmpx \
+            --disable-wtmp \
+            --disable-lastlog
     make -j4
-    strip ssh sshd
+    strip ssh sshd ssh-keygen scp sftp-server
+    if [ -f "${BUILD_DIRECTORY}/openssl/bin/openssl" ]; then
+        strip "${BUILD_DIRECTORY}/openssl/bin/openssl"
+    elif [ -f "${BUILD_DIRECTORY}/openssl/apps/openssl" ]; then
+        strip "${BUILD_DIRECTORY}/openssl/apps/openssl"
+    fi
 }
 
 main() {
@@ -38,14 +54,26 @@ main() {
     lib_build_zlib
     build_openssh
     if [ ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh" -o \
-         ! -f "${BUILD_DIRECTORY}/openssh-portable/sshd" ];then
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/sshd" -o \
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" ];then
         echo "[-] Building OpenSSH ${CURRENT_ARCH} failed!"
         exit 1
     fi
     OPENSSH_VERSION=$(get_version "${BUILD_DIRECTORY}/openssh-portable/ssh -V 2>&1 | awk '{print \$1}' | sed 's/,//g'")
     version_number=$(echo "$OPENSSH_VERSION" | cut -d"-" -f2 | cut -d"_" -f2)
+    
     cp "${BUILD_DIRECTORY}/openssh-portable/ssh" "${OUTPUT_DIRECTORY}/ssh${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/sshd" "${OUTPUT_DIRECTORY}/sshd${OPENSSH_VERSION}"
+    cp "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" "${OUTPUT_DIRECTORY}/ssh-keygen${OPENSSH_VERSION}"
+    cp "${BUILD_DIRECTORY}/openssh-portable/scp" "${OUTPUT_DIRECTORY}/scp${OPENSSH_VERSION}"
+    cp "${BUILD_DIRECTORY}/openssh-portable/sftp-server" "${OUTPUT_DIRECTORY}/sftp-server${OPENSSH_VERSION}"
+    
+    if [ -f "${BUILD_DIRECTORY}/openssl/bin/openssl" ]; then
+        cp "${BUILD_DIRECTORY}/openssl/bin/openssl" "${OUTPUT_DIRECTORY}/openssl${OPENSSH_VERSION}"
+    elif [ -f "${BUILD_DIRECTORY}/openssl/apps/openssl" ]; then
+        cp "${BUILD_DIRECTORY}/openssl/apps/openssl" "${OUTPUT_DIRECTORY}/openssl${OPENSSH_VERSION}"
+    fi
+
     echo "[+] Finished building OpenSSH ${CURRENT_ARCH}"
 
     OPENSSH_VERSION=$(echo $OPENSSH_VERSION | sed 's/-//')
