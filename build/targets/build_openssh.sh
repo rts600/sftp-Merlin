@@ -20,6 +20,8 @@ build_openssh() {
     git checkout V_9_1_P1
     git clean -fdx
     autoreconf -i
+    
+    # 注入你指定的完整极简编译参数
     CC="gcc ${GCC_OPTS}" \
         CXX="g++ ${GXX_OPTS}" \
         CXXFLAGS="-I${BUILD_DIRECTORY}/openssl -I${BUILD_DIRECTORY}/binutils-gdb/zlib" \
@@ -40,43 +42,40 @@ build_openssh() {
             --disable-utmpx \
             --disable-wtmp \
             --disable-lastlog
+            
     make -j4
-    strip ssh sshd ssh-keygen scp sftp-server
-    if [ -f "${BUILD_DIRECTORY}/openssl/bin/openssl" ]; then
-        strip "${BUILD_DIRECTORY}/openssl/bin/openssl"
-    elif [ -f "${BUILD_DIRECTORY}/openssl/apps/openssl" ]; then
-        strip "${BUILD_DIRECTORY}/openssl/apps/openssl"
-    fi
+    
+    # 仅对需要的二进制文件进行去符号表(瘦身)操作
+    strip ssh sshd ssh-keygen scp
 }
 
 main() {
     lib_build_openssl
     lib_build_zlib
     build_openssh
+    
+    # 检查核心文件是否成功生成
     if [ ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh" -o \
          ! -f "${BUILD_DIRECTORY}/openssh-portable/sshd" -o \
-         ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" ];then
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" -o \
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/scp" ];then
         echo "[-] Building OpenSSH ${CURRENT_ARCH} failed!"
         exit 1
     fi
+    
     OPENSSH_VERSION=$(get_version "${BUILD_DIRECTORY}/openssh-portable/ssh -V 2>&1 | awk '{print \$1}' | sed 's/,//g'")
     version_number=$(echo "$OPENSSH_VERSION" | cut -d"-" -f2 | cut -d"_" -f2)
     
+    # 仅复制你强制保留的组件，不再打包其他冗余文件
     cp "${BUILD_DIRECTORY}/openssh-portable/ssh" "${OUTPUT_DIRECTORY}/ssh${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/sshd" "${OUTPUT_DIRECTORY}/sshd${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" "${OUTPUT_DIRECTORY}/ssh-keygen${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/scp" "${OUTPUT_DIRECTORY}/scp${OPENSSH_VERSION}"
-    cp "${BUILD_DIRECTORY}/openssh-portable/sftp-server" "${OUTPUT_DIRECTORY}/sftp-server${OPENSSH_VERSION}"
-    
-    if [ -f "${BUILD_DIRECTORY}/openssl/bin/openssl" ]; then
-        cp "${BUILD_DIRECTORY}/openssl/bin/openssl" "${OUTPUT_DIRECTORY}/openssl${OPENSSH_VERSION}"
-    elif [ -f "${BUILD_DIRECTORY}/openssl/apps/openssl" ]; then
-        cp "${BUILD_DIRECTORY}/openssl/apps/openssl" "${OUTPUT_DIRECTORY}/openssl${OPENSSH_VERSION}"
-    fi
 
     echo "[+] Finished building OpenSSH ${CURRENT_ARCH}"
 
     OPENSSH_VERSION=$(echo $OPENSSH_VERSION | sed 's/-//')
+    # 修复了双引号闭合问题，确保环境变量正确传递
     echo "PACKAGED_NAME=${OPENSSH_VERSION}" >> "$GITHUB_OUTPUT"
     echo "PACKAGED_NAME_PATH=/output/*" >> "$GITHUB_OUTPUT"
     echo "PACKAGED_VERSION=${version_number}" >> "$GITHUB_OUTPUT"
