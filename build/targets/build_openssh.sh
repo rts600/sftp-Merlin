@@ -21,7 +21,6 @@ build_openssh() {
     git clean -fdx
     autoreconf -i
     
-    # 注入你指定的完整极简编译参数
     CC="gcc ${GCC_OPTS}" \
         CXX="g++ ${GXX_OPTS}" \
         CXXFLAGS="-I${BUILD_DIRECTORY}/openssl -I${BUILD_DIRECTORY}/binutils-gdb/zlib" \
@@ -44,9 +43,7 @@ build_openssh() {
             --disable-lastlog
             
     make -j4
-    
-    # 仅对需要的二进制文件进行去符号表(瘦身)操作
-    strip ssh sshd ssh-keygen scp
+    strip ssh sshd ssh-keygen scp sftp-server
 }
 
 main() {
@@ -54,11 +51,11 @@ main() {
     lib_build_zlib
     build_openssh
     
-    # 检查核心文件是否成功生成
     if [ ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh" -o \
          ! -f "${BUILD_DIRECTORY}/openssh-portable/sshd" -o \
          ! -f "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" -o \
-         ! -f "${BUILD_DIRECTORY}/openssh-portable/scp" ];then
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/scp" -o \
+         ! -f "${BUILD_DIRECTORY}/openssh-portable/sftp-server" ];then
         echo "[-] Building OpenSSH ${CURRENT_ARCH} failed!"
         exit 1
     fi
@@ -66,16 +63,15 @@ main() {
     OPENSSH_VERSION=$(get_version "${BUILD_DIRECTORY}/openssh-portable/ssh -V 2>&1 | awk '{print \$1}' | sed 's/,//g'")
     version_number=$(echo "$OPENSSH_VERSION" | cut -d"-" -f2 | cut -d"_" -f2)
     
-    # 仅复制你强制保留的组件，不再打包其他冗余文件
     cp "${BUILD_DIRECTORY}/openssh-portable/ssh" "${OUTPUT_DIRECTORY}/ssh${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/sshd" "${OUTPUT_DIRECTORY}/sshd${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/ssh-keygen" "${OUTPUT_DIRECTORY}/ssh-keygen${OPENSSH_VERSION}"
     cp "${BUILD_DIRECTORY}/openssh-portable/scp" "${OUTPUT_DIRECTORY}/scp${OPENSSH_VERSION}"
+    cp "${BUILD_DIRECTORY}/openssh-portable/sftp-server" "${OUTPUT_DIRECTORY}/sftp-server${OPENSSH_VERSION}"
 
     echo "[+] Finished building OpenSSH ${CURRENT_ARCH}"
 
     OPENSSH_VERSION=$(echo $OPENSSH_VERSION | sed 's/-//')
-    # 修复了双引号闭合问题，确保环境变量正确传递
     echo "PACKAGED_NAME=${OPENSSH_VERSION}" >> "$GITHUB_OUTPUT"
     echo "PACKAGED_NAME_PATH=/output/*" >> "$GITHUB_OUTPUT"
     echo "PACKAGED_VERSION=${version_number}" >> "$GITHUB_OUTPUT"
